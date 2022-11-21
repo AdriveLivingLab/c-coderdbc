@@ -593,7 +593,7 @@ void CiMainGenerator::Gen_MainConverter()
   for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
   {
     MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
-    fwriter->Append("#include %s/%s.h>", fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
+    fwriter->Append("#include <%s/%s.h>", fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
   }
 
   for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
