@@ -17,6 +17,19 @@ static const std::string __typeprint[8] =
   "uint64_t"
 };
 
+//(added by AdriveLivingLab)
+static const std::string __msgtypeprint[8] =
+{
+  "int8",
+  "int16",
+  "int32",
+  "int64",
+  "uint8",
+  "uint16",
+  "uint32",
+  "uint64"
+};
+
 std::string IndentedString(size_t n, const std::string& source, const char c)
 {
   if (source.length() >= n)
@@ -46,6 +59,17 @@ std::string PrintType(uint8_t id)
   if (id < 8)
   {
     return __typeprint[id];
+  }
+
+  return "";
+}
+
+//(added by AdriveLivingLab)
+std::string PrintMsgType(uint8_t id)
+{
+  if (id < 8)
+  {
+    return __msgtypeprint[id];
   }
 
   return "";

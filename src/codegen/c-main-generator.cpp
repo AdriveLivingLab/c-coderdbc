@@ -80,6 +80,21 @@ void CiMainGenerator::Generate(DbcMessageList_t& dlist, const AppSettings_t& fsd
     // 7 step is to print canmonitorutil.h template code
     Gen_CanMonUtil();
   }
+
+  // ros functionality (changed by AdriveLivingLab)
+
+  // 1 step decode the messages from can into a struct
+  Gen_MainDecoder();
+  // 2 step convert from raw to physical values
+  Gen_MainConverter();
+  // 3 step create ros .msg file definitions
+  Gen_MainMsgs();
+  // 5 Generate code snippet to initialise the .msg files
+  Gen_CMake();
+  // 6 Generate code to start all publishers
+  Gen_Publishers();
+  // 7 Generate code to handle the evaluation of a packet
+  Gen_Evaluation();
 }
 
 void CiMainGenerator::Gen_MainHeader()
@@ -507,7 +522,305 @@ void CiMainGenerator::Gen_DbcCodeConf()
   fwriter->Flush(fdesc->file.confdir + '/' + "dbccodeconf.h");
 }
 
-void CiMainGenerator::WriteSigStructField(const SignalDescriptor_t& sig, bool bits, size_t padwidth)
+//(added by AdriveLivingLab)
+void CiMainGenerator::Gen_MainDecoder() 
+{
+  // message decoding
+  // Example:
+  //
+  // typedef struct MESSAGE_NAME {
+  // u32 SIGNAL_NAME : BIT_LENGTH ; // BIT_LENGTH is signal lenght in frame on ethernet packet and as flexray signal
+  // }MESSAGE_NAME;
+
+  fwriter->Append("// typedef struct for message decoding");
+  fwriter->Append(2);
+  fwriter->Append("#pragma once");
+  fwriter->Append("#include <stdint.h>");
+
+  for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
+  {
+    // write message typedefs and additional expressions
+    MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
+    size_t max_sig_name_len = 27;
+    // get max length of a signal name for alignment of the file
+    for (size_t signum = 0; signum < m.Signals.size(); signum++)
+    {
+      SignalDescriptor_t &s = m.Signals[signum];
+
+      if (s.Name.size() > max_sig_name_len)
+      {
+        max_sig_name_len = s.Name.size();
+      }
+    }
+
+    /***************************************
+     * Decoding part
+     ***************************************/
+    fwriter->Append();
+    fwriter->Append("typedef struct __attribute__((packed, aligned(1))) %s_raw", m.Name.c_str());
+    fwriter->Append("{");
+
+    for (size_t signum = 0; signum < m.Signals.size(); signum++)
+    {
+      SignalDescriptor_t &sig = m.Signals[signum];
+      // Write bit-fielded part
+      WriteSimpleSigStructField(sig, true, max_sig_name_len, false, true);
+    }
+    fwriter->Append("} %s_raw;", m.Name.c_str());
+    fwriter->Append();
+  }
+  // save fwrite cached text to file
+  fwriter->Flush(fdesc->file.rosdir + '/' + "decode.h");
+}
+
+//(added by AdriveLivingLab)
+void CiMainGenerator::Gen_MainConverter()
+{
+  // typedef for message decoding
+  // Example:
+  //
+  //  void MESSAGE_NAME_APP(pkt)
+  //  appStr.SIGAN_NAME                      = pkt->SIGNAL_NAME               * FACTOR + OFFSET             ;
+  //  };
+
+  fwriter->Append("// typedef struct for calculation of physical values");
+  fwriter->Append(2);
+  fwriter->Append("#include <stdint.h>");
+  fwriter->Append("#include <stdlib.h>");
+  fwriter->Append("#include \"decode.h\"");
+
+  // Includes
+  for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
+  {
+    MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
+    fwriter->Append("#include %s/%s.h>", fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
+  }
+
+  for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
+  {
+    // write message typedef s and additional expressions
+    MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
+    size_t max_sig_name_len = 27;
+
+    for (size_t signum = 0; signum < m.Signals.size(); signum++)
+    {
+      SignalDescriptor_t &s = m.Signals[signum];
+
+      if (s.Name.size() > max_sig_name_len)
+      {
+        max_sig_name_len = s.Name.size();
+      }
+    }
+
+    fwriter->Append();
+    fwriter->Append("%s::%s* %s_APP(%s_raw *pkt)", fdesc->gen.DrvName_orig.c_str(), m.Name.c_str(), m.Name.c_str(), m.Name.c_str());
+    fwriter->Append("{");
+    fwriter->Append("%s::%s *pAppMsg = (%s::%s *) calloc(1,sizeof(%s::%s));", fdesc->gen.DrvName_orig.c_str(), m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
+    fwriter->Append("pAppMsg->header.stamp = ros::Time::now();");
+    SignalDescriptor_t rollsig;
+
+    if (m.RollSig != nullptr)
+    {
+      // rolling counter is detected
+      rollsig = (*m.RollSig);
+      rollsig.CommentText = "";
+      rollsig.Name += "_expt";
+    }
+
+    for (size_t signum = 0; signum < m.Signals.size(); signum++)
+    {
+      SignalDescriptor_t &sig = m.Signals[signum];
+      // Write bit-fielded part
+      WriteSimpleSigConvField(sig, false, max_sig_name_len);
+    }
+    fwriter->Append("return pAppMsg;");
+    fwriter->Append("}");
+    fwriter->Append();
+  }
+  // save fwrite cached text to file
+  fwriter->Flush(fdesc->file.rosdir + '/' + "convert.h");
+}
+
+//(added by AdriveLivingLab)
+void CiMainGenerator::Gen_MainMsgs()
+{
+  // file creation of .msg files
+  // Example:
+  //  Header header
+  //  int SIGNAL_NAME;
+  //  };
+
+  for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
+  {
+    // write message typedef s and additional expressions
+    MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
+    size_t max_sig_name_len = 27;
+
+    fwriter->Append("Header header");
+    std::string dtype = "";
+
+    for (size_t signum = 0; signum < m.Signals.size(); signum++)
+    {
+      SignalDescriptor_t &sig = m.Signals[signum];
+      // Write bit-fielded part
+      WriteRosMsgFile(sig);
+    }
+    // save fwrite cached text to file
+    fwriter->Flush(fdesc->file.rosmsgdir + '/' + m.Name.c_str() + ".msg");
+  }
+}
+
+//(added by AdriveLivingLab)
+void CiMainGenerator::Gen_CMake()
+{
+  // message including
+  // Example:
+  //  #include <ROS_PACKAGE_NAME/MESSAGE_NAME.h>
+  // save fwrite cached text to file
+  fwriter->Append("cmake_minimum_required(VERSION 3.0.2)");
+  fwriter->Append("project(%s)", fdesc->gen.DrvName_orig.c_str());
+
+  fwriter->Append("add_compile_options(-std=c++17 -Wno-packed-bitfield-compat)");
+
+  fwriter->Append("find_package(catkin REQUIRED COMPONENTS");
+  fwriter->Append("    message_generation");
+  fwriter->Append("    roscpp");
+  fwriter->Append("    rospy");
+  fwriter->Append("    std_msgs");
+  fwriter->Append(")");
+
+  fwriter->Append("find_package(Boost REQUIRED COMPONENTS system date_time)");
+
+  fwriter->Append("add_message_files(");
+  fwriter->Append("  FILES");
+
+  for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
+  {
+    // get message typedefs and additional expressions
+    MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
+    // write messagename.msg
+    fwriter->Append("   %s.msg", m.Name.c_str());
+  }
+
+  fwriter->Append(")");
+  fwriter->Append(" generate_messages(");
+  fwriter->Append("  DEPENDENCIES");
+  fwriter->Append("  std_msgs");
+  fwriter->Append(" )");
+
+  fwriter->Append("catkin_package(");
+  fwriter->Append("  CATKIN_DEPENDS ");
+  fwriter->Append("  roscpp");
+  fwriter->Append("  std_msgs");
+  fwriter->Append("  DEPENDS");
+  fwriter->Append("  Boost");
+  fwriter->Append("  message_runtime");
+  fwriter->Append(")");
+
+  fwriter->Append("set(use_SYSTEM_BOOST TRUE)");
+
+  fwriter->Append("include_directories(");
+  fwriter->Append("  include");
+  fwriter->Append("  ${catkin_INCLUDE_DIRS}");
+  fwriter->Append("  SYSTEM {Boost_INCLUDE_DIRS}");
+  fwriter->Append(")");
+
+  fwriter->Append("add_library(${PROJECT_NAME}_core");
+  fwriter->Append("  include/%s/decode.h", fdesc->gen.DrvName_orig.c_str());
+  fwriter->Append("  include/%s/convert.h",fdesc->gen.DrvName_orig.c_str());
+  fwriter->Append("  src/%s.cpp",fdesc->gen.DrvName_orig.c_str());
+  fwriter->Append(")");
+
+  fwriter->Append("add_executable(");
+  fwriter->Append("  ${PROJECT_NAME} src/%s.cpp",fdesc->gen.DrvName_orig.c_str());
+  fwriter->Append(" )");
+
+  fwriter->Append("add_dependencies(${PROJECT_NAME}_core");
+  fwriter->Append("${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})");
+
+  fwriter->Append("add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_generate_messages_cpp)");
+
+  fwriter->Append("add_dependencies(${PROJECT_NAME}");
+  fwriter->Append("  ${catkin_EXPORTED_TARGETS}");
+  fwriter->Append(")");
+
+  fwriter->Append("target_link_libraries(${PROJECT_NAME}_core");
+  fwriter->Append("  ${catkin_LIBRARIES}");
+  fwriter->Append(")");
+
+  fwriter->Append("target_link_libraries(${PROJECT_NAME}");
+  fwriter->Append("  ${PROJECT_NAME}_core");
+  fwriter->Append("  ${catkin_LIBRARIES}");
+  fwriter->Append("  ${Boost_LIBRARIES}");
+  fwriter->Append(")");
+
+  fwriter->Append("install(");
+  fwriter->Append("  TARGETS ${PROJECT_NAME}");
+  fwriter->Append("  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}");
+  fwriter->Append(")");
+
+  fwriter->Append("install(TARGETS ${PROJECT_NAME}");
+  fwriter->Append("  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}");
+  fwriter->Append("  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}");
+  fwriter->Append("  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}");
+  fwriter->Append(")");
+
+  fwriter->Append("install(");
+  fwriter->Append("  DIRECTORY include/${PROJECT_NAME}/");
+  fwriter->Append("  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}");
+  fwriter->Append("  FILES_MATCHING PATTERN \"*.hpp\"");
+  fwriter->Append("  )");
+
+  fwriter->Append("  install(");
+  fwriter->Append("  DIRECTORY doc");
+  fwriter->Append("  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}");
+  fwriter->Append("  )");
+  
+  fwriter->Flush(fdesc->file.rosdir + '/' + "CMakeLists.txt");
+}
+
+//(added by AdriveLivingLab)
+void CiMainGenerator::Gen_Publishers()
+{
+  // message including
+  // Example:
+  //  ros::Publisher  publisher_ = nh.advertise<ROS_PACKAGE_NAME::MESSAGE_NAME>("FRAME_4_3_4_B", 1);
+
+  fwriter->Append("// Publisher inits");
+
+  for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
+  {
+    // write message typedef s and additional expressions
+    MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
+
+    fwriter->Append("ros::Publisher  publish_%s_ = nh.advertise<%s::%s>(\"%s\", 1);", m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str(), m.Name.c_str());
+  }
+  // save fwrite cached text to file
+  fwriter->Flush(fdesc->file.rosdir + '/' + "publishers.txt");
+}
+
+void CiMainGenerator::Gen_Evaluation()
+{
+  for (size_t num = 0; num < sigprt->sigs_expr.size(); num++)
+  {
+    // write message typedef s and additional expressions
+    MessageDescriptor_t &m = sigprt->sigs_expr[num]->msg;
+
+    fwriter->Append("if (pApp->pPkt->dw_id == %d)", m.MsgID);
+    fwriter->Append("{");
+    // fwriter->Append("%s_raw *rawMsg;",m.Name.c_str());
+    fwriter->Append("%s::%s *decodedMsg;", fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
+    fwriter->Append("%s_raw *rawMsg = (%s_raw *)(pApp->pPkt->ab_data);", m.Name.c_str(), m.Name.c_str());
+    fwriter->Append("decodedMsg = %s_APP(rawMsg);", m.Name.c_str());
+    fwriter->Append("publish_%s_.publish(*decodedMsg);", m.Name.c_str());
+    fwriter->Append("free(pApp->pPkt);");
+    fwriter->Append("free(decodedMsg);");
+    fwriter->Append("}");
+  }
+  fwriter->Flush(fdesc->file.rosdir + '/' + "evaluation.txt");
+}
+
+void CiMainGenerator::WriteSigStructField(const SignalDescriptor_t &sig, bool bits, size_t padwidth)
 {
   if (sig.CommentText.size() > 0)
   {
@@ -628,7 +941,184 @@ void CiMainGenerator::WriteSigStructField(const SignalDescriptor_t& sig, bool bi
   }
 }
 
-void CiMainGenerator::WriteUnpackBody(const CiExpr_t* sgs)
+//(added by AdriveLivingLab)
+void CiMainGenerator::WriteSimpleSigStructField(const SignalDescriptor_t &sig, bool bits, size_t padwidth, bool commenttext, bool rawtype) 
+{
+  if ((sig.CommentText.size() > 0) && commenttext)
+  {
+    fwriter->Append("  // " + std::regex_replace(sig.CommentText, std::regex("\n"), "\n  // "));
+  }
+
+  if ((sig.ValueText.size() > 0) && commenttext)
+  {
+    fwriter->Append("  // " + std::regex_replace(sig.ValueText, std::regex("\n"), "\n  // "));
+  }
+
+  if (sig.Multiplex == MultiplexType::kMulValue)
+  {
+    fwriter->Append("  // multiplex variable");
+  }
+  else if (sig.Multiplex == MultiplexType::kMaster)
+  {
+    fwriter->Append("  // MULTIPLEX master signal");
+  }
+
+  std::string dtype = "";
+
+  if (rawtype || sig.Factor == 1)
+  {
+    dtype += "  " + PrintType((int)sig.TypeRo) + " " + sig.Name;
+  }
+  else
+  {
+    dtype += "  double " + sig.Name;
+  }
+
+  if (bits)
+  {
+    dtype += StrPrint(" : %i", sig.LengthBit);
+  }
+
+  dtype += ";";
+
+  std::string pad = " ";
+
+  dtype += pad.insert(0, padwidth + 18 - dtype.size(), ' ');
+
+  fwriter->AppendText(dtype);
+
+  pad = " // ";
+  pad += (sig.Signed) ? " [-]" : "    ";
+
+  fwriter->AppendText(pad);
+
+  fwriter->AppendText(" Bits=%2d", sig.LengthBit);
+
+  size_t offset = 0;
+  std::string infocmnt{};
+
+  if (sig.IsDoubleSig)
+  {
+    if (sig.Offset != 0)
+    {
+      infocmnt = IndentedString(offset, infocmnt);
+      offset += 27;
+      infocmnt += StrPrint(" Offset= %f", sig.Offset);
+    }
+
+    if (sig.Factor != 1)
+    {
+      infocmnt = IndentedString(offset, infocmnt);
+      offset += 24;
+      infocmnt += StrPrint(" Factor= %f", sig.Factor);
+    }
+  }
+  else if (sig.IsSimpleSig == false)
+  {
+    // 2 type of signal
+    if (sig.Offset != 0)
+    {
+      infocmnt = IndentedString(offset, infocmnt);
+      offset += 27;
+      infocmnt += StrPrint(" Offset= %d", (int)sig.Offset);
+    }
+
+    if (sig.Factor != 1)
+    {
+      infocmnt = IndentedString(offset, infocmnt);
+      offset += 24;
+      infocmnt += StrPrint(" Factor= %d", (int)sig.Factor);
+    }
+  }
+
+  if (sig.Unit.size() > 0)
+  {
+    infocmnt = IndentedString(offset, infocmnt);
+    infocmnt += StrPrint(" Unit:'%s'", sig.Unit.c_str());
+  }
+
+  fwriter->AppendText(infocmnt);
+  fwriter->Append();
+}
+
+//(added by AdriveLivingLab)
+void CiMainGenerator::WriteSimpleSigConvField(const SignalDescriptor_t &sig, bool bits, size_t padwidth)
+{
+  std::string dtype = "";
+
+  if (sig.Name.find("reserved_") != std::string::npos)
+  {
+    return;
+  }
+
+  dtype += "  pAppMsg->" + sig.Name + " = pkt->" + sig.Name;
+
+  size_t offset = 0;
+
+  if (sig.IsDoubleSig)
+  {
+
+    if (sig.Factor != 1)
+    {
+      dtype += StrPrint(" * %f", sig.Factor);
+    }
+
+    if (sig.Offset != 0)
+    {
+      dtype += StrPrint(" + %f", sig.Offset);
+    }
+  }
+  else if (sig.IsSimpleSig == false)
+  {
+    // 2 type of signal
+
+    if (sig.Factor != 1)
+    {
+      dtype += StrPrint(" * %d", (int)sig.Factor);
+    }
+
+    if (sig.Offset != 0)
+    {
+      dtype += StrPrint(" + %d", (int)sig.Offset);
+    }
+  }
+
+  dtype += ";";
+
+  std::string pad = " ";
+
+  fwriter->AppendText(dtype);
+  fwriter->Append();
+}
+
+//(added by AdriveLivingLab)
+void CiMainGenerator::WriteRosMsgFile(const SignalDescriptor_t &sig)
+{
+
+  if (sig.Name.find("reserved_") != std::string::npos)
+  {
+    return;
+  }
+  // if its not a trivial signal, e.g. it needs offset and factor
+  if (!sig.IsSimpleSig)
+  {
+    // if we know its a double
+    if (sig.IsDoubleSig)
+    {
+      fwriter->Append("float64 %s", sig.Name.c_str());
+    }
+    else
+    {
+      fwriter->Append("%s %s", PrintMsgType((int)sig.TypePhys).c_str(), sig.Name.c_str());
+    }
+  }
+  else // simple signal
+  {
+    fwriter->Append("%s %s", PrintMsgType((int)sig.TypePhys).c_str(), sig.Name.c_str());
+  }
+}
+
+void CiMainGenerator::WriteUnpackBody(const CiExpr_t *sgs)
 {
   for (size_t num = 0; num < sgs->to_signals.size(); num++)
   {
@@ -814,4 +1304,3 @@ void CiMainGenerator::PrintPackCommonText(const std::string& arrtxt, const CiExp
     fwriter->Append();
   }
 }
-

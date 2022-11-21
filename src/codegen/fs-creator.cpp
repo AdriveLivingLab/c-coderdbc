@@ -12,6 +12,8 @@ static const char* kUsrDir = "/usr";
 static const char* kIncDir = "/inc";
 static const char* kConfDir = "/conf";
 static const char* kUtilDir = "/butl";
+static const char* kRosDir = "/ros"; //(added by AdriveLivingLab)
+static const char* kRosMsgDir = "/ros/msg"; //(added by AdriveLivingLab)
 
 FsCreator::FsCreator()
 {
@@ -26,6 +28,8 @@ void FsCreator::Configure(const std::string& drvname, const std::string& outpath
   FS.file.incdir = outpath + kIncDir;
   FS.file.confdir = outpath + kConfDir;
   FS.file.utildir = outpath + kUtilDir;
+  FS.file.rosdir = outpath + kRosDir; //(added by AdriveLivingLab)
+  FS.file.rosmsgdir = outpath + kRosMsgDir; //(added by AdriveLivingLab)
 // directory valid and exists, set all the values
   FS.gen.DrvName_orig = drvname;
   FS.gen.DRVNAME = str_toupper(drvname);
@@ -156,6 +160,8 @@ bool FsCreator::PrepareDirectory(bool rw)
   std::filesystem::create_directory(FS.file.incdir);
   std::filesystem::create_directory(FS.file.confdir);
   std::filesystem::create_directory(FS.file.utildir);
+  std::filesystem::create_directory(FS.file.rosdir); //(added by AdriveLivingLab)
+  std::filesystem::create_directory(FS.file.rosmsgdir); //(added by AdriveLivingLab)
 
   return ret;
 }

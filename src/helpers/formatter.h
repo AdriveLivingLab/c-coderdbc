@@ -11,6 +11,8 @@ const char* StrPrint(const char* format, ...);
 
 std::string PrintType(uint8_t tid);
 
+std::string PrintMsgType(uint8_t tid); //(added by AdriveLivingLab)
+
 std::string str_toupper(std::string s);
 
 std::string str_tolower(std::string s);

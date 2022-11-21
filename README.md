@@ -2,6 +2,20 @@
   
   ## What is it
 
+  This fork is intended to adapt the utility for generating code snippets for a Robot Operating System noetic ninjemys (ROS1 noetic) node from a dbc (CAN database) file. 
+  
+  This is explicitly intended for usage with the Ixxat FRC-EP170 gateway, which is able to receive FlexRay frames, from e.g. a car's internal network, and deploy them over a TCP ethernet connection. Also see https://github.com/AdriveLivingLab/FRos for that.
+  
+  So in the end, this utility will produce the following files in the subfolder /ros:
+ 
+  | File           | Description |
+  | -------------- | ----------- |
+  | CMakeLists.txt | For building the node, includes the .msg files                     |
+  | convert.h      | Functions for converting raw signals to physical signals           |
+  | decode.h       | Structs for extracting the raw signals from the stream             |
+  | evaluation.txt | Code snippet with functions for calling the convert function based on the message ID |
+  | publishers.txt | Code snippet for copy-pasting into the node code to setup a publisher for every message                   |
+
   CLI utilty for generating C code from dbc (CAN matrix) files
 
   ## Build and run
@@ -95,3 +109,7 @@
   for each of these specific ECUs dedicated "###-binutil.c/h" pair of source code will be generated.
   
   See help output using details.
+
+  ## Acknowledgement
+  We would like to thank the github user [astand](https://github.com/astand) that prepared this beautiful program that, thanks to his contributions to the open source world, we were able to use as a framework to be able to realize this project. You can view the original work [here.](https://github.com/astand/c-coderdbc)
+  This fork was realized by [Ludwig Kastner](https://github.com/ludwig-kastner) and [Daniel Schneider](https://www.github.com/lnxdxc).

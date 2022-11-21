@@ -24,7 +24,21 @@ class CiMainGenerator {
   void Gen_CanMonUtil();
   void Gen_DbcCodeConf();
 
+//(added by AdriveLivingLab)  
+  void Gen_MainDecoder(); //done
+  void Gen_MainConverter(); //done
+  void Gen_MainMsgs(); //done
+  void Gen_CMake(); //done
+  void Gen_Publishers();
+  void Gen_Evaluation();
+
+
   void WriteSigStructField(const SignalDescriptor_t& sig, bool bitfield, size_t pad);
+  
+//(added by AdriveLivingLab)
+  void WriteSimpleSigStructField(const SignalDescriptor_t& sig, bool bitfield, size_t pad, bool commenttext, bool rawtype);
+  void WriteSimpleSigConvField(const SignalDescriptor_t& sig, bool bitfield, size_t pad);
+  void WriteRosMsgFile(const SignalDescriptor_t& sig);
 
   void WriteUnpackBody(const CiExpr_t* sgs);
   void WritePackStructBody(const CiExpr_t* sgs);

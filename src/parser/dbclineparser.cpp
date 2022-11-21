@@ -133,7 +133,7 @@ bool DbcLineParser::ParseMessageLine(MessageDescriptor_t* msg, const std::string
 
   msg->DLC = atoi(items[4].c_str());
 
-  if ((msg->MsgID & 0x60000000) != 0 || msg->DLC == 0 || msg->DLC > 8)
+  if ((msg->MsgID & 0x60000000) != 0 || msg->DLC == 0) //(changed by AdriveLivingLab)
   {
     return false;
   }
@@ -272,14 +272,15 @@ bool DbcLineParser::ParseSignalLine(SignalDescriptor_t* sig, const std::string& 
       sig->IsSimpleSig = true;
     }
 
-    if (!sig->IsSimpleSig)
-    {
+	//(uncommented function by AdriveLivingLab)
+    //if (!sig->IsSimpleSig)
+    //{
       // For this case the name of signal must be marked specially
       // to pay attention that if SIGFLOAT is enabled, this signal
       // must behave as ReadOnly (_ro)
-      sig->NameFloat = sig->Name + "_phys";
-      sig->Name += "_ro";
-    }
+    //  sig->NameFloat = sig->Name + "_phys";
+    //  sig->Name += "_ro";
+    //}
   }
 
   if (tailpart.size() == 3)

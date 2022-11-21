@@ -11,6 +11,8 @@ typedef struct
   std::string incdir;
   std::string confdir;
   std::string utildir;
+  std::string rosdir; //(added by AdriveLivingLab)
+  std::string rosmsgdir; //(added by AdriveLivingLab)
 
   OutFileDescriptor_t core_h;
   OutFileDescriptor_t core_c;
