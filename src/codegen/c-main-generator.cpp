@@ -1060,12 +1060,12 @@ void CiMainGenerator::WriteSimpleSigConvField(const SignalDescriptor_t &sig, boo
 
     if (sig.Factor != 1)
     {
-      dtype += StrPrint(" * %f", sig.Factor);
+      dtype += StrPrint(" * ") + prt_double(sig.Factor, 10);
     }
 
     if (sig.Offset != 0)
     {
-      dtype += StrPrint(" + %f", sig.Offset);
+      dtype += StrPrint(" + ") + prt_double(sig.Offset, 10);
     }
   }
   else if (sig.IsSimpleSig == false)

@@ -1,5 +1,8 @@
 #include "formatter.h"
 #include <algorithm>
+#include <sstream>
+#include <limits>
+#include <iomanip>
 
 static const size_t kMaxWorkArrLength = 4096;
 
@@ -166,4 +169,58 @@ std::string make_c_name(const std::string& s)
   }
 
   return ret;
+}
+
+std::string prt_double(double value, size_t precision, bool usedot)
+{
+  std::stringstream strstrm;
+  strstrm.imbue(std::locale::classic());
+  strstrm << std::fixed << std::setprecision(10) << value;
+
+  std::string s(strstrm.str());
+
+  size_t dotpos = s.find('.');
+
+  if (dotpos == std::string::npos)
+  {
+    // dot not found
+    if (usedot)
+    {
+      s += ".0";
+    }
+
+    return s;
+  }
+
+  // remove trailing zeros after decimal delimiter (dot char)
+  size_t tailsize = std::min((s.size() - (dotpos + 1u)), precision);
+  size_t addtail = 0u;
+
+  for (size_t j = 0; j < tailsize; j++)
+  {
+    auto ch =  s[dotpos + 1u + j];
+
+    if (ch > '0' && ch <= '9')
+    {
+      addtail = j + 1;
+    }
+  }
+
+  if (addtail == 0)
+  {
+    // precision == 0 or xxx.0(0)  resize cut tail with dot
+    s.resize(dotpos);
+
+    if (usedot)
+    {
+      s += ".0";
+    }
+  }
+  else
+  {
+    // xxx.x(x)
+    s.resize(dotpos + addtail + 1);
+  }
+
+  return s;
 }
